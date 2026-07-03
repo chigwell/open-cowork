@@ -195,7 +195,7 @@ const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
   openai: {
     apiKey: '',
     baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-5.4',
+    model: 'claude-sonnet-5',
   },
   ollama: {
     apiKey: '',
