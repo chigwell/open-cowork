@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../store';
+import { getSupportedLanguageCode, supportedLanguages } from '../../i18n/languages';
 
 export function SettingsGeneral() {
   const { i18n, t } = useTranslation();
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
-  const currentLang = i18n.language.startsWith('zh') ? 'zh' : 'en';
+  const currentLang = getSupportedLanguageCode(i18n.language);
   const [appVer, setAppVer] = useState('');
   useEffect(() => {
     try {
@@ -17,11 +18,6 @@ export function SettingsGeneral() {
       /* ignore */
     }
   }, []);
-
-  const languages = [
-    { code: 'en', nativeName: 'English' },
-    { code: 'zh', nativeName: '中文' },
-  ];
 
   const themeOptions = [
     { value: 'light' as const, label: t('general.themeLight') },
@@ -55,7 +51,7 @@ export function SettingsGeneral() {
       <div className="space-y-3">
         <h4 className="text-sm font-medium text-text-primary">{t('general.language')}</h4>
         <div className="flex gap-2">
-          {languages.map((lang) => (
+          {supportedLanguages.map((lang) => (
             <button
               key={lang.code}
               onClick={() => i18n.changeLanguage(lang.code)}
