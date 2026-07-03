@@ -186,6 +186,75 @@ describe('Llm7AuthService', () => {
     );
   });
 
+  it('opens Google OAuth in a browser, captures the loopback code, and signs in', async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const href = String(url);
+      if (href === 'https://oauth2.googleapis.com/token') {
+        expect(init?.method).toBe('POST');
+        const body = new URLSearchParams(String(init?.body));
+        expect(body.get('grant_type')).toBe('authorization_code');
+        expect(body.get('code')).toBe('google-auth-code');
+        expect(body.get('redirect_uri')).toMatch(
+          /^http:\/\/127\.0\.0\.1:\d+\/llm7\/oauth\/callback$/
+        );
+        expect(body.get('code_verifier')).toBeTruthy();
+        return jsonResponse({ id_token: 'google-id-token' });
+      }
+      if (href.endsWith('/auth/google')) {
+        expect(init?.method).toBe('POST');
+        expect(init?.body).toBe(JSON.stringify({ credential: 'google-id-token' }));
+        return jsonResponse({
+          auth_token: 'llm7-account-token',
+          email: 'user@example.com',
+          sub: 42,
+        });
+      }
+      if (href.endsWith('/verify')) {
+        return jsonResponse({ email: 'user@example.com', sub: '42' });
+      }
+      if (href.endsWith('/tokens')) {
+        return jsonResponse({ token: 'llm7-generated-api-key' });
+      }
+      if (href.endsWith('/models')) {
+        return jsonResponse({ data: [{ id: LLM7_DEFAULT_MODEL }] });
+      }
+      throw new Error(`Unexpected fetch: ${href}`);
+    }) as unknown as typeof fetch;
+
+    const openExternal = vi.fn(async (authUrl: string) => {
+      const parsed = new URL(authUrl);
+      const redirectUri = parsed.searchParams.get('redirect_uri');
+      const state = parsed.searchParams.get('state');
+      expect(parsed.origin + parsed.pathname).toBe('https://accounts.google.com/o/oauth2/v2/auth');
+      expect(parsed.searchParams.get('response_type')).toBe('code');
+      expect(parsed.searchParams.get('scope')).toBe('openid email profile');
+      expect(parsed.searchParams.get('code_challenge_method')).toBe('S256');
+      expect(redirectUri).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/llm7\/oauth\/callback$/);
+      expect(state).toBeTruthy();
+      await fetch(`${redirectUri}?code=google-auth-code&state=${encodeURIComponent(state || '')}`);
+    });
+
+    const store = makeStore(makeConfig());
+    const service = new Llm7AuthService(store, fetchMock);
+
+    const result = await service.signInWithGoogleBrowser(openExternal);
+
+    expect(result.status).toEqual({
+      isAuthenticated: true,
+      email: 'user@example.com',
+      sub: '42',
+      configuredModel: LLM7_DEFAULT_MODEL,
+    });
+    expect(openExternal).toHaveBeenCalledOnce();
+    expect(store.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: 'llm7-generated-api-key',
+        baseUrl: LLM7_API_BASE_URL,
+        llm7AuthToken: 'llm7-account-token',
+      })
+    );
+  });
+
   it('rejects auth responses without auth_token', async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({ email: 'user@example.com' })

@@ -79,6 +79,7 @@ function App() {
   const clearGlobalNotice = useAppStore((s) => s.clearGlobalNotice);
   const setSandboxSetupComplete = useAppStore((s) => s.setSandboxSetupComplete);
   const setShowSettings = useAppStore((s) => s.setShowSettings);
+  const setSettingsTab = useAppStore((s) => s.setSettingsTab);
   const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
   const setContextPanelCollapsed = useAppStore((s) => s.setContextPanelCollapsed);
 
@@ -176,6 +177,13 @@ function App() {
     },
     [setAppConfig, setIsConfigured]
   );
+
+  const handleUseApiKeyForLlm7 = useCallback(() => {
+    setShowLlm7AuthModal(false);
+    setShowConfigModal(false);
+    setSettingsTab('api');
+    setShowSettings(true);
+  }, [setSettingsTab, setShowConfigModal, setShowSettings]);
 
   // Handle sandbox setup complete
   const handleSandboxSetupComplete = useCallback(() => {
@@ -285,7 +293,11 @@ function App() {
         onAction={handleGlobalNoticeAction}
       />
 
-      <LLM7AuthModal isOpen={showLlm7AuthModal} onAuthenticated={handleLlm7Authenticated} />
+      <LLM7AuthModal
+        isOpen={showLlm7AuthModal}
+        onAuthenticated={handleLlm7Authenticated}
+        onUseApiKey={handleUseApiKeyForLlm7}
+      />
     </div>
   );
 }

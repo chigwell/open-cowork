@@ -464,15 +464,6 @@ function createWindow() {
     }
   };
 
-  const isGoogleIdentityPopupUrl = (url: string): boolean => {
-    try {
-      const parsed = new URL(url);
-      return parsed.protocol === 'https:' && parsed.hostname === 'accounts.google.com';
-    } catch {
-      return false;
-    }
-  };
-
   const extractLocalPathFromNavigationUrl = (url: string): string | null => {
     try {
       const parsed = new URL(url);
@@ -501,24 +492,6 @@ function createWindow() {
     if (localPath) {
       void revealNavigationTarget(url);
       return { action: 'deny' };
-    }
-    if (isGoogleIdentityPopupUrl(url)) {
-      return {
-        action: 'allow',
-        overrideBrowserWindowOptions: {
-          width: 460,
-          height: 640,
-          resizable: false,
-          minimizable: false,
-          maximizable: false,
-          title: 'Sign in with Google',
-          webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true,
-            sandbox: true,
-          },
-        },
-      };
     }
     if (isExternalUrl(url)) {
       void shell.openExternal(url);
@@ -1541,6 +1514,13 @@ ipcMain.handle(
     return { ...result, config: updatedConfig };
   }
 );
+
+ipcMain.handle('llm7Auth.signInWithGoogle', async () => {
+  const previousConfig = configStore.getAll();
+  const result = await llm7AuthService.signInWithGoogleBrowser((url) => shell.openExternal(url));
+  const updatedConfig = await syncConfigAfterMutation(previousConfig);
+  return { ...result, config: updatedConfig };
+});
 
 ipcMain.handle('llm7Auth.logout', async () => {
   const previousConfig = configStore.getAll();

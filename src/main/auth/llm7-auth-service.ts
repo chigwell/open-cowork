@@ -1,9 +1,13 @@
 import type { AppConfig, ApiConfigSet, ConfigStore, ProviderProfile } from '../config/config-store';
+import { createHash, randomBytes } from 'node:crypto';
+import { createServer, type Server, type ServerResponse } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import {
   LLM7_AUTH_API_ORIGIN,
   LLM7_API_BASE_URL,
   LLM7_BALANCE_API_BASE_URL,
   LLM7_DEFAULT_MODEL,
+  LLM7_GOOGLE_CLIENT_ID,
 } from '../../shared/llm7-auth';
 
 export interface Llm7AuthStatus {
@@ -63,7 +67,31 @@ interface Llm7BalanceResponse {
   subscription_allowance_remaining_percent?: string | number;
 }
 
+interface GoogleOAuthTokenResponse {
+  access_token?: string;
+  expires_in?: number;
+  id_token?: string;
+  refresh_token?: string;
+  scope?: string;
+  token_type?: string;
+  error?: string;
+  error_description?: string;
+}
+
+interface GoogleOAuthCallbackListener {
+  redirectUri: string;
+  waitForCode: () => Promise<string>;
+  close: () => Promise<void>;
+}
+
 type FetchLike = typeof fetch;
+type OpenExternal = (url: string) => Promise<unknown> | unknown;
+
+const GOOGLE_OAUTH_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
+const GOOGLE_OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const GOOGLE_OAUTH_SCOPE = 'openid email profile';
+const GOOGLE_OAUTH_CALLBACK_PATH = '/llm7/oauth/callback';
+const GOOGLE_OAUTH_TIMEOUT_MS = 2 * 60 * 1000;
 
 class Llm7AuthHttpError extends Error {
   constructor(
@@ -150,6 +178,165 @@ function extractApiKey(data: Llm7CreateTokenResponse): string {
   return (data.token || data.api_key || data.key || '').trim();
 }
 
+function base64Url(buffer: Buffer): string {
+  return buffer.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function createPkcePair(): { codeVerifier: string; codeChallenge: string } {
+  const codeVerifier = base64Url(randomBytes(32));
+  const codeChallenge = base64Url(createHash('sha256').update(codeVerifier).digest());
+  return { codeVerifier, codeChallenge };
+}
+
+function getGoogleOAuthClientId(): string {
+  return (process.env.OPEN_COWORK_LLM7_GOOGLE_CLIENT_ID || LLM7_GOOGLE_CLIENT_ID).trim();
+}
+
+function writeOAuthCallbackResponse(
+  response: ServerResponse,
+  statusCode: number,
+  title: string,
+  message: string
+): void {
+  response.writeHead(statusCode, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
+  response.end(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${title}</title>
+  <style>
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 3rem; line-height: 1.5; }
+    main { max-width: 36rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>${title}</h1>
+    <p>${message}</p>
+  </main>
+</body>
+</html>`);
+}
+
+function closeServer(server: Server): Promise<void> {
+  return new Promise((resolve) => {
+    if (!server.listening) {
+      resolve();
+      return;
+    }
+    server.close(() => resolve());
+  });
+}
+
+async function createGoogleOAuthCallbackListener(
+  expectedState: string,
+  timeoutMs = GOOGLE_OAUTH_TIMEOUT_MS
+): Promise<GoogleOAuthCallbackListener> {
+  let settled = false;
+  let timeout: NodeJS.Timeout | null = null;
+  let resolveCode: (code: string) => void = () => {};
+  let rejectCode: (error: Error) => void = () => {};
+
+  const codePromise = new Promise<string>((resolve, reject) => {
+    resolveCode = resolve;
+    rejectCode = reject;
+  });
+
+  const settleSuccess = (server: Server, code: string) => {
+    if (settled) return;
+    settled = true;
+    if (timeout) clearTimeout(timeout);
+    resolveCode(code);
+    void closeServer(server);
+  };
+
+  const settleError = (server: Server, error: Error) => {
+    if (settled) return;
+    settled = true;
+    if (timeout) clearTimeout(timeout);
+    rejectCode(error);
+    void closeServer(server);
+  };
+
+  const server = createServer((request, response) => {
+    const parsedUrl = new URL(request.url || '/', 'http://127.0.0.1');
+    if (parsedUrl.pathname !== GOOGLE_OAUTH_CALLBACK_PATH) {
+      writeOAuthCallbackResponse(response, 404, 'Not found', 'Return to Open Cowork and retry.');
+      return;
+    }
+
+    const state = parsedUrl.searchParams.get('state') || '';
+    if (state !== expectedState) {
+      writeOAuthCallbackResponse(
+        response,
+        400,
+        'Sign-in blocked',
+        'The OAuth state did not match. Return to Open Cowork and retry.'
+      );
+      settleError(server, new Error('Google sign-in failed: invalid OAuth state'));
+      return;
+    }
+
+    const oauthError = parsedUrl.searchParams.get('error');
+    if (oauthError) {
+      const description = parsedUrl.searchParams.get('error_description') || oauthError;
+      writeOAuthCallbackResponse(
+        response,
+        400,
+        'Sign-in cancelled',
+        'Google did not complete sign-in. You can close this tab and return to Open Cowork.'
+      );
+      settleError(server, new Error(`Google sign-in failed: ${description}`));
+      return;
+    }
+
+    const code = parsedUrl.searchParams.get('code');
+    if (!code) {
+      writeOAuthCallbackResponse(
+        response,
+        400,
+        'Sign-in failed',
+        'Google did not return an authorization code. Return to Open Cowork and retry.'
+      );
+      settleError(server, new Error('Google sign-in failed: missing authorization code'));
+      return;
+    }
+
+    writeOAuthCallbackResponse(
+      response,
+      200,
+      'Sign-in complete',
+      'You can close this tab and return to Open Cowork.'
+    );
+    settleSuccess(server, code);
+  });
+
+  const redirectUri = await new Promise<string>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address() as AddressInfo | null;
+      if (!address?.port) {
+        reject(new Error('Could not start Google sign-in callback listener'));
+        return;
+      }
+      resolve(`http://127.0.0.1:${address.port}${GOOGLE_OAUTH_CALLBACK_PATH}`);
+    });
+  });
+
+  timeout = setTimeout(() => {
+    settleError(server, new Error('Timed out waiting for Google sign-in'));
+  }, timeoutMs);
+
+  return {
+    redirectUri,
+    waitForCode: () => codePromise,
+    close: () => closeServer(server),
+  };
+}
+
 function clearLlm7Profiles(config: AppConfig): ApiConfigSet[] {
   return config.configSets.map((set) => {
     const profile = set.profiles?.['custom:openai'];
@@ -196,6 +383,43 @@ export class Llm7AuthService {
       throw new Error('Missing auth token');
     }
     return data;
+  }
+
+  async exchangeGoogleAuthorizationCode(input: {
+    code: string;
+    codeVerifier: string;
+    redirectUri: string;
+    clientId?: string;
+  }): Promise<string> {
+    const clientId = (input.clientId || getGoogleOAuthClientId()).trim();
+    if (!clientId) {
+      throw new Error('Missing Google OAuth client ID');
+    }
+
+    const body = new URLSearchParams({
+      client_id: clientId,
+      code: input.code,
+      code_verifier: input.codeVerifier,
+      grant_type: 'authorization_code',
+      redirect_uri: input.redirectUri,
+    });
+
+    const response = await this.fetchImpl(GOOGLE_OAUTH_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+    const data = await readJsonResponse<GoogleOAuthTokenResponse>(
+      response,
+      'Failed to exchange Google authorization code'
+    );
+    const idToken = data.id_token?.trim();
+    if (!idToken) {
+      throw new Error(
+        'Google did not return an ID token. Check that the OAuth client is a Desktop app and that the openid scope is allowed.'
+      );
+    }
+    return idToken;
   }
 
   async verifyToken(token: string): Promise<Llm7VerifyResponse> {
@@ -384,10 +608,50 @@ export class Llm7AuthService {
       },
     };
   }
+
+  async signInWithGoogleBrowser(openExternal: OpenExternal): Promise<Llm7SignInResult> {
+    const clientId = getGoogleOAuthClientId();
+    if (!clientId) {
+      throw new Error('Missing Google OAuth client ID');
+    }
+
+    const state = base64Url(randomBytes(32));
+    const { codeVerifier, codeChallenge } = createPkcePair();
+    const listener = await createGoogleOAuthCallbackListener(state);
+
+    try {
+      const authUrl = new URL(GOOGLE_OAUTH_AUTH_URL);
+      authUrl.searchParams.set('client_id', clientId);
+      authUrl.searchParams.set('redirect_uri', listener.redirectUri);
+      authUrl.searchParams.set('response_type', 'code');
+      authUrl.searchParams.set('scope', GOOGLE_OAUTH_SCOPE);
+      authUrl.searchParams.set('state', state);
+      authUrl.searchParams.set('code_challenge', codeChallenge);
+      authUrl.searchParams.set('code_challenge_method', 'S256');
+      authUrl.searchParams.set('prompt', 'select_account');
+
+      const openResult = await openExternal(authUrl.toString());
+      if (openResult === false) {
+        throw new Error('Could not open the system browser for Google sign-in');
+      }
+
+      const code = await listener.waitForCode();
+      const credential = await this.exchangeGoogleAuthorizationCode({
+        code,
+        codeVerifier,
+        redirectUri: listener.redirectUri,
+        clientId,
+      });
+      return this.signInWithGoogleCredential(credential);
+    } finally {
+      await listener.close();
+    }
+  }
 }
 
 export const __llm7AuthInternals = {
   pickDefaultModel,
   isLlm7BaseUrl,
   extractApiKey,
+  createPkcePair,
 };

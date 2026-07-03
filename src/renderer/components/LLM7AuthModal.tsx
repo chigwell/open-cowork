@@ -1,143 +1,35 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, Loader2, ShieldCheck } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { AlertCircle, ExternalLink, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { Llm7SignInResult } from '../types';
-import { LLM7_GOOGLE_CLIENT_ID } from '../../shared/llm7-auth';
-
-const GOOGLE_SCRIPT_ID = 'gsi-client';
-const GOOGLE_BUTTON_ID = 'llm7-google-signin-button';
-
-interface GoogleCredentialResponse {
-  credential?: string;
-}
-
-interface GoogleAccountsId {
-  initialize: (options: {
-    client_id: string;
-    callback: (response: GoogleCredentialResponse) => void;
-  }) => void;
-  renderButton: (
-    element: HTMLElement,
-    options: {
-      theme: 'outline';
-      size: 'large';
-      type: 'standard';
-      shape: 'rectangular';
-      text: 'continue_with';
-      width: number;
-    }
-  ) => void;
-}
-
-declare global {
-  interface Window {
-    google?: {
-      accounts?: {
-        id?: GoogleAccountsId;
-      };
-    };
-  }
-}
 
 interface LLM7AuthModalProps {
   isOpen: boolean;
   onAuthenticated: (result: Llm7SignInResult) => void;
+  onUseApiKey: () => void;
 }
 
-export function LLM7AuthModal({ isOpen, onAuthenticated }: LLM7AuthModalProps) {
+export function LLM7AuthModal({ isOpen, onAuthenticated, onUseApiKey }: LLM7AuthModalProps) {
   const { t } = useTranslation();
-  const [isScriptReady, setIsScriptReady] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState('');
-  const initializedRef = useRef(false);
 
-  const handleCredentialResponse = useCallback(
-    async ({ credential }: GoogleCredentialResponse) => {
-      if (!credential) {
-        setError(t('llm7Auth.missingCredential', 'Google did not return a credential.'));
-        return;
-      }
-
-      setIsSigningIn(true);
-      setError('');
-      try {
-        const result = await window.electronAPI.llm7Auth.signInWithGoogleCredential({
-          credential,
-        });
-        onAuthenticated(result);
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : t('llm7Auth.signInFailed', 'Could not sign in to LLM7.')
-        );
-      } finally {
-        setIsSigningIn(false);
-      }
-    },
-    [onAuthenticated, t]
-  );
-
-  const renderGoogleButton = useCallback(() => {
-    const googleId = window.google?.accounts?.id;
-    const buttonEl = document.getElementById(GOOGLE_BUTTON_ID);
-    if (!googleId || !buttonEl) {
-      return;
+  const handleGoogleSignIn = useCallback(async () => {
+    setIsSigningIn(true);
+    setError('');
+    try {
+      const result = await window.electronAPI.llm7Auth.signInWithGoogle();
+      onAuthenticated(result);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : t('llm7Auth.signInFailed', 'Could not sign in to LLM7.')
+      );
+    } finally {
+      setIsSigningIn(false);
     }
-
-    buttonEl.innerHTML = '';
-    if (!initializedRef.current) {
-      googleId.initialize({
-        client_id: LLM7_GOOGLE_CLIENT_ID,
-        callback: handleCredentialResponse,
-      });
-      initializedRef.current = true;
-    }
-
-    googleId.renderButton(buttonEl, {
-      theme: 'outline',
-      size: 'large',
-      type: 'standard',
-      shape: 'rectangular',
-      text: 'continue_with',
-      width: 250,
-    });
-    setIsScriptReady(true);
-  }, [handleCredentialResponse]);
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    if (window.google?.accounts?.id) {
-      renderGoogleButton();
-      return;
-    }
-
-    const existingScript = document.getElementById(GOOGLE_SCRIPT_ID) as HTMLScriptElement | null;
-    if (existingScript) {
-      existingScript.addEventListener('load', renderGoogleButton, { once: true });
-      return () => existingScript.removeEventListener('load', renderGoogleButton);
-    }
-
-    const script = document.createElement('script');
-    script.id = GOOGLE_SCRIPT_ID;
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    script.defer = true;
-    script.onload = renderGoogleButton;
-    script.onerror = () => {
-      setError(t('llm7Auth.googleScriptFailed', 'Could not load Google sign-in.'));
-    };
-    document.body.appendChild(script);
-  }, [isOpen, renderGoogleButton, t]);
-
-  useEffect(() => {
-    if (isOpen && isScriptReady) {
-      renderGoogleButton();
-    }
-  }, [isOpen, isScriptReady, renderGoogleButton]);
+  }, [onAuthenticated, t]);
 
   if (!isOpen) {
     return null;
@@ -173,25 +65,33 @@ export function LLM7AuthModal({ isOpen, onAuthenticated }: LLM7AuthModalProps) {
         </div>
 
         <div className="space-y-4 px-6 py-6">
-          <div className="flex min-h-[44px] justify-center">
-            <div
-              id={GOOGLE_BUTTON_ID}
-              className={isSigningIn ? 'pointer-events-none opacity-50' : ''}
-            />
-            {!isScriptReady && !error && (
-              <div className="flex items-center gap-2 text-sm text-text-muted">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {t('llm7Auth.loadingGoogle', 'Loading Google sign-in...')}
-              </div>
-            )}
-          </div>
-
-          {isSigningIn && (
-            <div className="flex items-center justify-center gap-2 text-sm text-text-secondary">
+          <button
+            type="button"
+            onClick={() => {
+              void handleGoogleSignIn();
+            }}
+            disabled={isSigningIn}
+            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border border-border bg-background-secondary px-4 py-2.5 text-sm font-medium text-text-primary transition-colors hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSigningIn ? (
               <Loader2 className="h-4 w-4 animate-spin" />
-              {t('llm7Auth.signingIn', 'Signing in...')}
-            </div>
-          )}
+            ) : (
+              <ExternalLink className="h-4 w-4" />
+            )}
+            {isSigningIn
+              ? t('llm7Auth.signingIn', 'Signing in...')
+              : t('llm7Auth.signInWithBrowser', 'Sign in with Google')}
+          </button>
+
+          <button
+            type="button"
+            onClick={onUseApiKey}
+            disabled={isSigningIn}
+            className="flex min-h-[40px] w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <KeyRound className="h-4 w-4" />
+            {t('llm7Auth.useApiKeyInstead', 'Use API key instead')}
+          </button>
 
           {error && (
             <div className="flex gap-2 rounded-xl bg-error/10 px-4 py-3 text-sm text-error">

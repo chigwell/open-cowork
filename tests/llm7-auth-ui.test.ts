@@ -23,36 +23,39 @@ describe('LLM7 auth onboarding UI wiring', () => {
     expect(source).toContain('const hasSeenInitialConfigStatus = useAppStore');
     expect(source).toContain('setShowLlm7AuthModal(!isConfigured);');
     expect(source).toContain('window.electronAPI.llm7Auth.getStatus()');
-    expect(source).toContain(
-      '<LLM7AuthModal isOpen={showLlm7AuthModal} onAuthenticated={handleLlm7Authenticated} />'
-    );
+    expect(source).toContain('<LLM7AuthModal');
+    expect(source).toContain('onAuthenticated={handleLlm7Authenticated}');
+    expect(source).toContain('onUseApiKey={handleUseApiKeyForLlm7}');
   });
 
-  it('uses Google Identity Services and sends only the credential through IPC', () => {
+  it('starts Google sign-in through the main-process browser flow', () => {
     const source = fs.readFileSync(modalPath, 'utf8');
 
-    expect(source).toContain("script.src = 'https://accounts.google.com/gsi/client';");
-    expect(source).toContain('client_id: LLM7_GOOGLE_CLIENT_ID');
-    expect(source).toContain('window.electronAPI.llm7Auth.signInWithGoogleCredential');
-    expect(source).toContain('credential,');
+    expect(source).toContain('window.electronAPI.llm7Auth.signInWithGoogle()');
+    expect(source).toContain('onUseApiKey');
+    expect(source).not.toContain('https://accounts.google.com/gsi/client');
+    expect(source).not.toContain('LLM7_GOOGLE_CLIENT_ID');
+    expect(source).not.toContain('window.google');
     expect(source).not.toContain('localStorage');
     expect(source).not.toContain('document.cookie');
   });
 
-  it('allows only Google Identity Services in CSP script and frame directives', () => {
+  it('does not allow embedded Google Identity Services in CSP', () => {
     const source = fs.readFileSync(indexPath, 'utf8');
 
-    expect(source).toContain("script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com");
-    expect(source).toContain('frame-src https://accounts.google.com');
+    expect(source).toContain("script-src 'self' 'wasm-unsafe-eval'");
+    expect(source).not.toContain('https://accounts.google.com');
   });
 
-  it('keeps the Google Identity Services popup inside Electron', () => {
+  it('opens Google OAuth through the system browser instead of an Electron popup', () => {
     const source = fs.readFileSync(mainPath, 'utf8');
 
-    expect(source).toContain('const isGoogleIdentityPopupUrl = (url: string): boolean => {');
-    expect(source).toContain("parsed.hostname === 'accounts.google.com'");
-    expect(source).toContain('if (isGoogleIdentityPopupUrl(url)) {');
-    expect(source).toContain("title: 'Sign in with Google'");
+    expect(source).toContain("ipcMain.handle('llm7Auth.signInWithGoogle'");
+    expect(source).toContain(
+      'llm7AuthService.signInWithGoogleBrowser((url) => shell.openExternal(url))'
+    );
+    expect(source).not.toContain('isGoogleIdentityPopupUrl');
+    expect(source).not.toContain("title: 'Sign in with Google'");
     expect(source).toContain('void shell.openExternal(url);');
   });
 

@@ -194,6 +194,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   llm7Auth: {
     getStatus: (): Promise<Llm7AuthStatus> => ipcRenderer.invoke('llm7Auth.getStatus'),
     getBalance: (): Promise<Llm7Balance | null> => ipcRenderer.invoke('llm7Auth.getBalance'),
+    signInWithGoogle: (): Promise<Llm7SignInResult> =>
+      ipcRenderer.invoke('llm7Auth.signInWithGoogle'),
     signInWithGoogleCredential: (payload: { credential: string }): Promise<Llm7SignInResult> =>
       ipcRenderer.invoke('llm7Auth.signInWithGoogleCredential', payload),
     logout: (): Promise<{ success: boolean; config: AppConfig; status: Llm7AuthStatus }> =>
@@ -498,6 +500,7 @@ declare global {
       llm7Auth: {
         getStatus: () => Promise<Llm7AuthStatus>;
         getBalance: () => Promise<Llm7Balance | null>;
+        signInWithGoogle: () => Promise<Llm7SignInResult>;
         signInWithGoogleCredential: (payload: { credential: string }) => Promise<Llm7SignInResult>;
         logout: () => Promise<{
           success: boolean;
