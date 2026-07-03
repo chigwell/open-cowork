@@ -68,14 +68,9 @@ interface Llm7BalanceResponse {
 }
 
 interface GoogleOAuthTokenResponse {
-  access_token?: string;
-  expires_in?: number;
-  id_token?: string;
-  refresh_token?: string;
-  scope?: string;
-  token_type?: string;
-  error?: string;
-  error_description?: string;
+  auth_token?: string;
+  email?: string;
+  sub?: string | number;
 }
 
 interface GoogleOAuthCallbackListener {
@@ -88,7 +83,6 @@ type FetchLike = typeof fetch;
 type OpenExternal = (url: string) => Promise<unknown> | unknown;
 
 const GOOGLE_OAUTH_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
-const GOOGLE_OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_OAUTH_SCOPE = 'openid email profile';
 const GOOGLE_OAUTH_CALLBACK_PATH = '/llm7/oauth/callback';
 const GOOGLE_OAUTH_TIMEOUT_MS = 2 * 60 * 1000;
@@ -389,37 +383,24 @@ export class Llm7AuthService {
     code: string;
     codeVerifier: string;
     redirectUri: string;
-    clientId?: string;
-  }): Promise<string> {
-    const clientId = (input.clientId || getGoogleOAuthClientId()).trim();
-    if (!clientId) {
-      throw new Error('Missing Google OAuth client ID');
-    }
-
-    const body = new URLSearchParams({
-      client_id: clientId,
-      code: input.code,
-      code_verifier: input.codeVerifier,
-      grant_type: 'authorization_code',
-      redirect_uri: input.redirectUri,
-    });
-
-    const response = await this.fetchImpl(GOOGLE_OAUTH_TOKEN_URL, {
+  }): Promise<Llm7GoogleAuthResponse> {
+    const response = await this.fetchImpl(`${LLM7_AUTH_API_ORIGIN}/auth/google/desktop`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: input.code,
+        code_verifier: input.codeVerifier,
+        redirect_uri: input.redirectUri,
+      }),
     });
     const data = await readJsonResponse<GoogleOAuthTokenResponse>(
       response,
-      'Failed to exchange Google authorization code'
+      'Failed to authenticate desktop Google sign-in with LLM7'
     );
-    const idToken = data.id_token?.trim();
-    if (!idToken) {
-      throw new Error(
-        'Google did not return an ID token. Check that the OAuth client is a Desktop app and that the openid scope is allowed.'
-      );
+    if (!data.auth_token?.trim()) {
+      throw new Error('Missing auth token');
     }
-    return idToken;
+    return data;
   }
 
   async verifyToken(token: string): Promise<Llm7VerifyResponse> {
@@ -640,12 +621,36 @@ export class Llm7AuthService {
         code,
         codeVerifier,
         redirectUri: listener.redirectUri,
-        clientId,
       });
-      return this.signInWithGoogleCredential(credential);
+      return this.signInWithLlm7Auth(credential);
     } finally {
       await listener.close();
     }
+  }
+
+  private async signInWithLlm7Auth(auth: Llm7GoogleAuthResponse): Promise<Llm7SignInResult> {
+    const authToken = auth.auth_token || '';
+    const verified = await this.verifyToken(authToken);
+    const apiKey = await this.createApiToken(authToken);
+    const model = await this.fetchDefaultModel(apiKey);
+    const config = this.applyLlm7TokenToConfig({
+      apiKey,
+      authToken,
+      email: verified.email,
+      sub: verified.sub,
+      model,
+    });
+
+    return {
+      success: true,
+      config,
+      status: {
+        isAuthenticated: true,
+        email: verified.email,
+        sub: verified.sub !== undefined ? String(verified.sub) : undefined,
+        configuredModel: model,
+      },
+    };
   }
 }
 

@@ -189,20 +189,12 @@ describe('Llm7AuthService', () => {
   it('opens Google OAuth in a browser, captures the loopback code, and signs in', async () => {
     const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       const href = String(url);
-      if (href === 'https://oauth2.googleapis.com/token') {
+      if (href.endsWith('/auth/google/desktop')) {
         expect(init?.method).toBe('POST');
-        const body = new URLSearchParams(String(init?.body));
-        expect(body.get('grant_type')).toBe('authorization_code');
-        expect(body.get('code')).toBe('google-auth-code');
-        expect(body.get('redirect_uri')).toMatch(
-          /^http:\/\/127\.0\.0\.1:\d+\/llm7\/oauth\/callback$/
-        );
-        expect(body.get('code_verifier')).toBeTruthy();
-        return jsonResponse({ id_token: 'google-id-token' });
-      }
-      if (href.endsWith('/auth/google')) {
-        expect(init?.method).toBe('POST');
-        expect(init?.body).toBe(JSON.stringify({ credential: 'google-id-token' }));
+        const body = JSON.parse(String(init?.body));
+        expect(body.code).toBe('google-auth-code');
+        expect(body.redirect_uri).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/llm7\/oauth\/callback$/);
+        expect(body.code_verifier).toBeTruthy();
         return jsonResponse({
           auth_token: 'llm7-account-token',
           email: 'user@example.com',
