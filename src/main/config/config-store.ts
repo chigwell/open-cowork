@@ -126,6 +126,11 @@ export interface AppConfig {
 
   // First run flag
   isConfigured: boolean;
+
+  // Optional LLM7 account session metadata. The generated API key still lives in profiles.
+  llm7AuthToken?: string;
+  llm7UserEmail?: string;
+  llm7UserSub?: string;
 }
 
 export interface MemoryModelRuntimeConfig {
@@ -171,6 +176,9 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
   'memoryEnabled',
   'enableThinking',
   'isConfigured',
+  'llm7AuthToken',
+  'llm7UserEmail',
+  'llm7UserSub',
 ]);
 
 const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
@@ -276,6 +284,9 @@ const defaultConfig: AppConfig = {
   },
   enableThinking: false,
   isConfigured: false,
+  llm7AuthToken: '',
+  llm7UserEmail: '',
+  llm7UserSub: '',
 };
 
 export const PROVIDER_PRESETS = API_PROVIDER_PRESETS;
@@ -979,6 +990,9 @@ export class ConfigStore {
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
       enableThinking: projected.enableThinking,
       isConfigured: toBoolean(raw.isConfigured, defaultConfig.isConfigured),
+      llm7AuthToken: typeof raw.llm7AuthToken === 'string' ? raw.llm7AuthToken : '',
+      llm7UserEmail: typeof raw.llm7UserEmail === 'string' ? raw.llm7UserEmail : '',
+      llm7UserSub: typeof raw.llm7UserSub === 'string' ? raw.llm7UserSub : '',
     };
     this.normalizeModelIds(result);
     return result;
@@ -1398,6 +1412,11 @@ export class ConfigStore {
           : current.memoryRuntime,
       isConfigured:
         updates.isConfigured !== undefined ? updates.isConfigured : current.isConfigured,
+      llm7AuthToken:
+        updates.llm7AuthToken !== undefined ? updates.llm7AuthToken : current.llm7AuthToken,
+      llm7UserEmail:
+        updates.llm7UserEmail !== undefined ? updates.llm7UserEmail : current.llm7UserEmail,
+      llm7UserSub: updates.llm7UserSub !== undefined ? updates.llm7UserSub : current.llm7UserSub,
     });
   }
 

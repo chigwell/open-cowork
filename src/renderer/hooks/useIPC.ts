@@ -22,6 +22,43 @@ const isElectron = typeof window !== 'undefined' && window.electronAPI !== undef
 // unmounting a subsequent useIPC caller) tears down the single shared
 // listener, silently dropping subsequent events from main.
 let ipcListenerInstalled = false;
+let llm7BalanceRefreshInFlight: Promise<void> | null = null;
+
+function refreshLlm7Balance(): Promise<void> {
+  if (!isElectron || !window.electronAPI?.llm7Auth?.getBalance) {
+    return Promise.resolve();
+  }
+
+  if (llm7BalanceRefreshInFlight) {
+    return llm7BalanceRefreshInFlight;
+  }
+
+  const store = useAppStore.getState();
+  store.setLlm7BalanceLoading(true);
+  store.setLlm7BalanceError(null);
+
+  llm7BalanceRefreshInFlight = window.electronAPI.llm7Auth
+    .getBalance()
+    .then((balance) => {
+      const latestStore = useAppStore.getState();
+      latestStore.setLlm7Balance(balance);
+      latestStore.setLlm7BalanceError(null);
+    })
+    .catch((error) => {
+      console.warn('[useIPC] Failed to refresh LLM7 balance:', error);
+      const latestStore = useAppStore.getState();
+      latestStore.setLlm7BalanceError(
+        error instanceof Error ? error.message : 'Balance unavailable'
+      );
+    })
+    .finally(() => {
+      const latestStore = useAppStore.getState();
+      latestStore.setLlm7BalanceLoading(false);
+      llm7BalanceRefreshInFlight = null;
+    });
+
+  return llm7BalanceRefreshInFlight;
+}
 
 export function useIPC() {
   // Handle incoming server events - only setup once across all useIPC() callers.
@@ -121,6 +158,7 @@ export function useIPC() {
       store.setIsConfigured(isConfigured);
       store.setAppConfig(config);
       store.setSettings({ theme: config.theme || 'light' });
+      void refreshLlm7Balance();
       if (isInitialConfigStatus) {
         store.markInitialConfigStatusSeen();
       }
@@ -146,6 +184,7 @@ export function useIPC() {
               store.clearActiveTurn(event.payload.sessionId);
               store.clearPendingTurns(event.payload.sessionId);
               store.clearQueuedMessages(event.payload.sessionId);
+              void refreshLlm7Balance();
             }
             break;
 

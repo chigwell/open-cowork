@@ -7,6 +7,7 @@ import type {
   SudoPasswordRequest,
   Settings,
   AppConfig,
+  Llm7Balance,
   SandboxSetupProgress,
   SandboxSyncStatus,
   SkillsStorageChangeEvent,
@@ -102,6 +103,9 @@ interface AppState {
   showConfigModal: boolean;
   hasSeenInitialConfigStatus: boolean;
   globalNotice: GlobalNotice | null;
+  llm7Balance: Llm7Balance | null;
+  llm7BalanceLoading: boolean;
+  llm7BalanceError: string | null;
 
   // Working directory
   workingDir: string | null;
@@ -169,6 +173,9 @@ interface AppState {
   markInitialConfigStatusSeen: () => void;
   setGlobalNotice: (notice: GlobalNotice | null) => void;
   clearGlobalNotice: () => void;
+  setLlm7Balance: (balance: Llm7Balance | null) => void;
+  setLlm7BalanceLoading: (loading: boolean) => void;
+  setLlm7BalanceError: (error: string | null) => void;
 
   // Working directory actions
   setWorkingDir: (path: string | null) => void;
@@ -235,6 +242,9 @@ export const useAppStore = create<AppState>((set) => ({
   showConfigModal: false,
   hasSeenInitialConfigStatus: false,
   globalNotice: null,
+  llm7Balance: null,
+  llm7BalanceLoading: false,
+  llm7BalanceError: null,
   workingDir: null,
   sandboxSetupProgress: null,
   isSandboxSetupComplete: false,
@@ -573,6 +583,9 @@ export const useAppStore = create<AppState>((set) => ({
   markInitialConfigStatusSeen: () => set({ hasSeenInitialConfigStatus: true }),
   setGlobalNotice: (notice) => set({ globalNotice: notice }),
   clearGlobalNotice: () => set({ globalNotice: null }),
+  setLlm7Balance: (balance) => set({ llm7Balance: balance }),
+  setLlm7BalanceLoading: (loading) => set({ llm7BalanceLoading: loading }),
+  setLlm7BalanceError: (error) => set({ llm7BalanceError: error }),
 
   // Working directory actions
   setWorkingDir: (path) => set({ workingDir: path }),

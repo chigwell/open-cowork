@@ -24,7 +24,7 @@ type AttachedFile = {
   inlineDataBase64?: string;
 };
 
-import welcomeLogoSrc from '../assets/logo.png';
+import welcomeLogoSrc from '../assets/llm7.png';
 
 export function WelcomeView() {
   const { t } = useTranslation();
@@ -450,7 +450,7 @@ export function WelcomeView() {
             />
             <div className="text-left">
               <h1 className="text-[2.35rem] md:text-[3.1rem] leading-none font-semibold tracking-[-0.05em] text-text-primary">
-                Open Cowork
+                LLM7 OpenCowork
               </h1>
             </div>
           </div>

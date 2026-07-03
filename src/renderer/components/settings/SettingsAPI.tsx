@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import {
   Key,
+  LogOut,
   Plug,
   Server,
   Cpu,
@@ -10,10 +11,13 @@ import {
   CheckCircle,
   RefreshCw,
 } from 'lucide-react';
+import { useState } from 'react';
 import { useApiConfigState } from '../../hooks/useApiConfigState';
 import { ApiConfigSetManager } from '../ApiConfigSetManager';
 import { CommonProviderSetupsCard, GuidanceInlineHint } from '../ProviderGuidance';
 import ApiDiagnosticsPanel from '../ApiDiagnosticsPanel';
+import { useAppStore } from '../../store';
+import { LLM7_API_BASE_URL } from '../../../shared/llm7-auth';
 
 interface ModelOptionItem {
   id: string;
@@ -24,6 +28,13 @@ interface ModelOptionItem {
 
 export function SettingsAPI() {
   const { t } = useTranslation();
+  const setAppConfig = useAppStore((s) => s.setAppConfig);
+  const setIsConfigured = useAppStore((s) => s.setIsConfigured);
+  const setLlm7Balance = useAppStore((s) => s.setLlm7Balance);
+  const setLlm7BalanceError = useAppStore((s) => s.setLlm7BalanceError);
+  const [isSigningOutLlm7, setIsSigningOutLlm7] = useState(false);
+  const [llm7LogoutMessage, setLlm7LogoutMessage] = useState('');
+  const [llm7LogoutError, setLlm7LogoutError] = useState('');
   const {
     provider,
     customProtocol,
@@ -85,8 +96,38 @@ export function SettingsAPI() {
     isDiagnosing,
     handleDiagnose,
     handleDeepDiagnose,
+    supportsLiveModelRefresh,
     shouldShowOllamaManualModelToggle,
   } = useApiConfigState();
+
+  const isLlm7Profile =
+    provider === 'custom' &&
+    customProtocol === 'openai' &&
+    baseUrl.trim().replace(/\/+$/, '') === LLM7_API_BASE_URL;
+  const hasLlm7Credentials = isLlm7Profile && Boolean(apiKey.trim());
+
+  const handleLlm7Logout = async () => {
+    setIsSigningOutLlm7(true);
+    setLlm7LogoutMessage('');
+    setLlm7LogoutError('');
+    try {
+      const result = await window.electronAPI.llm7Auth.logout();
+      setAppConfig(result.config);
+      setIsConfigured(Boolean(result.config?.isConfigured));
+      setLlm7Balance(null);
+      setLlm7BalanceError(null);
+      setApiKey('');
+      setLlm7LogoutMessage(t('llm7Auth.signedOut', 'Signed out of LLM7.'));
+    } catch (error) {
+      setLlm7LogoutError(
+        error instanceof Error
+          ? error.message
+          : t('llm7Auth.signOutFailed', 'Could not sign out of LLM7.')
+      );
+    } finally {
+      setIsSigningOutLlm7(false);
+    }
+  };
 
   if (isLoadingConfig) {
     return (
@@ -170,6 +211,51 @@ export function SettingsAPI() {
         )}
       </div>
 
+      {hasLlm7Credentials && (
+        <div className="space-y-3 py-5 border-b border-border-muted">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-medium text-text-primary">
+                {t('llm7Auth.accountTitle', 'LLM7 account')}
+              </div>
+              <p className="mt-1 text-xs leading-5 text-text-muted">
+                {t(
+                  'llm7Auth.accountDescription',
+                  'This profile uses an LLM7 API key generated from your Google sign-in.'
+                )}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                void handleLlm7Logout();
+              }}
+              disabled={isSigningOutLlm7}
+              className="flex items-center gap-2 rounded-lg border border-border-muted px-3 py-2 text-sm text-text-secondary transition-colors hover:border-error/40 hover:text-error disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isSigningOutLlm7 ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <LogOut className="h-4 w-4" />
+              )}
+              {t('llm7Auth.signOut', 'Sign out')}
+            </button>
+          </div>
+          {llm7LogoutMessage && (
+            <div className="flex items-center gap-2 rounded-lg bg-success/10 px-4 py-3 text-sm text-success">
+              <CheckCircle className="h-4 w-4 shrink-0" />
+              {llm7LogoutMessage}
+            </div>
+          )}
+          {llm7LogoutError && (
+            <div className="flex items-center gap-2 rounded-lg bg-error/10 px-4 py-3 text-sm text-error">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {llm7LogoutError}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Custom Protocol */}
       {provider === 'custom' && (
         <div className="space-y-3 py-5 border-b border-border-muted">
@@ -216,7 +302,7 @@ export function SettingsAPI() {
               <Server className="w-4 h-4" />
               {t('api.baseUrl')}
             </label>
-            {isOllamaMode && (
+            {supportsLiveModelRefresh && (
               <button
                 type="button"
                 onClick={() => {

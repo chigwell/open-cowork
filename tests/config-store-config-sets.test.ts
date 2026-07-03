@@ -42,6 +42,7 @@ vi.mock('electron-store', () => {
 });
 
 import { ConfigStore } from '../src/main/config/config-store';
+import { LLM7_API_BASE_URL, LLM7_DEFAULT_MODEL } from '../src/shared/llm7-auth';
 
 describe('ConfigStore config sets', () => {
   beforeEach(() => {
@@ -206,5 +207,37 @@ describe('ConfigStore config sets', () => {
 
     const invalidStore = new ConfigStore();
     expect(invalidStore.get('theme')).toBe('light');
+  });
+
+  it('stores LLM7 OAuth token as custom OpenAI credentials without resetting preferences', () => {
+    mocks.seed = {
+      theme: 'system',
+      memoryEnabled: false,
+      sandboxEnabled: true,
+    };
+
+    const store = new ConfigStore();
+    store.update({
+      provider: 'custom',
+      customProtocol: 'openai',
+      activeProfileKey: 'custom:openai',
+      apiKey: 'llm7-oauth-token',
+      baseUrl: LLM7_API_BASE_URL,
+      model: LLM7_DEFAULT_MODEL,
+      isConfigured: true,
+    });
+
+    const config = store.getAll();
+    expect(config.provider).toBe('custom');
+    expect(config.customProtocol).toBe('openai');
+    expect(config.activeProfileKey).toBe('custom:openai');
+    expect(config.apiKey).toBe('llm7-oauth-token');
+    expect(config.baseUrl).toBe(LLM7_API_BASE_URL);
+    expect(config.model).toBe(LLM7_DEFAULT_MODEL);
+    expect(config.profiles['custom:openai']?.apiKey).toBe('llm7-oauth-token');
+    expect(store.isConfigured()).toBe(true);
+    expect(config.theme).toBe('system');
+    expect(config.memoryEnabled).toBe(false);
+    expect(config.sandboxEnabled).toBe(true);
   });
 });

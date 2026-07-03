@@ -32,6 +32,7 @@ import {
   type AppTheme,
   type CreateConfigSetPayload,
 } from './config/config-store';
+import { Llm7AuthService } from './auth/llm7-auth-service';
 import { runConfigApiTest } from './config/config-test-routing';
 import { listOllamaModels } from './config/ollama-api';
 import { setPermissionRules } from './config/permission-rules-store';
@@ -65,6 +66,7 @@ import {
   buildScheduledTaskFallbackTitle,
   buildScheduledTaskTitle,
 } from '../shared/schedule/task-title';
+import { LLM7_API_BASE_URL } from '../shared/llm7-auth';
 import {
   isUncPath,
   isWindowsDrivePath,
@@ -116,6 +118,7 @@ let skillsManager: SkillsManager | null = null;
 let pluginRuntimeService: PluginRuntimeService | null = null;
 let memoryService: MemoryService | null = null;
 let scheduledTaskManager: ScheduledTaskManager | null = null;
+const llm7AuthService = new Llm7AuthService(configStore);
 
 function sanitizeDiagnosticBaseUrl(value: string | undefined): string | null {
   if (!value) {
@@ -461,6 +464,15 @@ function createWindow() {
     }
   };
 
+  const isGoogleIdentityPopupUrl = (url: string): boolean => {
+    try {
+      const parsed = new URL(url);
+      return parsed.protocol === 'https:' && parsed.hostname === 'accounts.google.com';
+    } catch {
+      return false;
+    }
+  };
+
   const extractLocalPathFromNavigationUrl = (url: string): string | null => {
     try {
       const parsed = new URL(url);
@@ -489,6 +501,24 @@ function createWindow() {
     if (localPath) {
       void revealNavigationTarget(url);
       return { action: 'deny' };
+    }
+    if (isGoogleIdentityPopupUrl(url)) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 460,
+          height: 640,
+          resizable: false,
+          minimizable: false,
+          maximizable: false,
+          title: 'Sign in with Google',
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: true,
+          },
+        },
+      };
     }
     if (isExternalUrl(url)) {
       void shell.openExternal(url);
@@ -1493,6 +1523,40 @@ ipcMain.handle('config.save', async (_event, newConfig: Partial<AppConfig>) => {
   return { success: true, config: updatedConfig };
 });
 
+ipcMain.handle('llm7Auth.getStatus', async () => {
+  const previousConfig = configStore.getAll();
+  const result = await llm7AuthService.getStatus();
+  if (result.configChanged) {
+    await syncConfigAfterMutation(previousConfig);
+  }
+  return result.status;
+});
+
+ipcMain.handle(
+  'llm7Auth.signInWithGoogleCredential',
+  async (_event, payload: { credential: string }) => {
+    const previousConfig = configStore.getAll();
+    const result = await llm7AuthService.signInWithGoogleCredential(payload?.credential || '');
+    const updatedConfig = await syncConfigAfterMutation(previousConfig);
+    return { ...result, config: updatedConfig };
+  }
+);
+
+ipcMain.handle('llm7Auth.logout', async () => {
+  const previousConfig = configStore.getAll();
+  llm7AuthService.clearLlm7Credentials();
+  const updatedConfig = await syncConfigAfterMutation(previousConfig);
+  return {
+    success: true,
+    config: updatedConfig,
+    status: { isAuthenticated: false },
+  };
+});
+
+ipcMain.handle('llm7Auth.getBalance', async () => {
+  return llm7AuthService.getBalance();
+});
+
 ipcMain.handle('config.createSet', async (_event, payload: CreateConfigSetPayload) => {
   log('[Config] Creating config set:', payload);
   const previousConfig = configStore.getAll();
@@ -1553,10 +1617,31 @@ ipcMain.handle(
     _event,
     payload: { provider: AppConfig['provider']; apiKey: string; baseUrl?: string }
   ): Promise<ProviderModelInfo[]> => {
-    if (payload.provider !== 'ollama') {
-      return [];
+    const normalizedBaseUrl = payload.baseUrl?.trim().replace(/\/+$/, '');
+    if (payload.provider === 'ollama') {
+      return listOllamaModels(payload);
     }
-    return listOllamaModels(payload);
+    if (payload.provider === 'custom' && normalizedBaseUrl === LLM7_API_BASE_URL) {
+      const response = await fetch(`${LLM7_API_BASE_URL}/models`, {
+        method: 'GET',
+        headers: payload.apiKey?.trim()
+          ? { Authorization: `Bearer ${payload.apiKey.trim()}` }
+          : undefined,
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to load LLM7 models: HTTP ${response.status}`);
+      }
+      const data = (await response.json()) as {
+        data?: Array<{ id?: string; name?: string }>;
+      };
+      return (data.data || [])
+        .map((model) => {
+          const id = model.id?.trim();
+          return id ? { id, name: model.name?.trim() || id } : null;
+        })
+        .filter((model): model is ProviderModelInfo => Boolean(model));
+    }
+    return [];
   }
 );
 

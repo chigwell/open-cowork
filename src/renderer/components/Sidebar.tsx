@@ -14,10 +14,12 @@ import {
   Plus,
   ListChecks,
   Check,
+  Wallet,
 } from 'lucide-react';
-import type { Session } from '../types';
+import type { AppConfig, Session } from '../types';
+import { LLM7_API_BASE_URL } from '../../shared/llm7-auth';
 
-import sidebarLogoSrc from '../assets/logo.png';
+import sidebarLogoSrc from '../assets/llm7.png';
 
 type SessionGroup = {
   key: string;
@@ -30,6 +32,9 @@ export function Sidebar() {
   const sessions = useAppStore((s) => s.sessions);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const settings = useAppStore((s) => s.settings);
+  const appConfig = useAppStore((s) => s.appConfig);
+  const llm7Balance = useAppStore((s) => s.llm7Balance);
+  const llm7BalanceLoading = useAppStore((s) => s.llm7BalanceLoading);
   const setActiveSession = useAppStore((s) => s.setActiveSession);
   const setMessages = useAppStore((s) => s.setMessages);
   const setTraceSteps = useAppStore((s) => s.setTraceSteps);
@@ -115,6 +120,8 @@ export function Sidebar() {
 
   const allVisibleSelected =
     visibleSessionIds.length > 0 && visibleSessionIds.every((id) => selectedIds.has(id));
+  const showLlm7Balance = hasLlm7Profile(appConfig) && Boolean(llm7Balance || llm7BalanceLoading);
+  const formattedLlm7Balance = llm7Balance ? formatLlm7Balance(llm7Balance.balanceUsd) : null;
 
   const toggleSelectAll = useCallback(() => {
     if (allVisibleSelected) {
@@ -286,7 +293,7 @@ export function Sidebar() {
             />
             <div className="min-w-0">
               <h1 className="text-[1.34rem] leading-none font-semibold tracking-[-0.035em] text-text-primary">
-                Open Cowork
+                LLM7 OC
               </h1>
             </div>
           </div>
@@ -495,6 +502,27 @@ export function Sidebar() {
               {themeIcon}
             </button>
           </div>
+          {showLlm7Balance && (
+            <div
+              className="mt-2 flex items-center gap-2 px-3 py-1.5 text-[11px] leading-4 text-text-muted"
+              title={
+                llm7Balance?.email
+                  ? `${t('llm7Auth.balance', 'Balance')} - ${llm7Balance.email}`
+                  : t('llm7Auth.balance', 'Balance')
+              }
+            >
+              <Wallet className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="min-w-0 truncate">LLM7</span>
+              <span className="ml-auto font-medium text-text-secondary">
+                {formattedLlm7Balance || (llm7BalanceLoading ? '...' : '')}
+              </span>
+              {llm7Balance?.subscriptionAllowanceRemainingPercent !== undefined && (
+                <span className="font-medium text-text-secondary">
+                  {Math.round(llm7Balance.subscriptionAllowanceRemainingPercent)}%
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
     </aside>
@@ -531,4 +559,35 @@ function groupSessionsByDate(sessions: Session[], t: (key: string) => string): S
   }
 
   return buckets.filter((bucket) => bucket.sessions.length > 0);
+}
+
+function normalizeBaseUrl(value: string | undefined): string {
+  return (value || '').trim().replace(/\/+$/, '');
+}
+
+function hasLlm7Profile(config: AppConfig | null): boolean {
+  if (!config) {
+    return false;
+  }
+
+  return config.configSets.some((set) => {
+    const profile = set.profiles?.['custom:openai'];
+    return Boolean(
+      profile?.apiKey?.trim() && normalizeBaseUrl(profile.baseUrl) === LLM7_API_BASE_URL
+    );
+  });
+}
+
+function formatLlm7Balance(value: string): string {
+  const numeric = Number.parseFloat(value);
+  if (!Number.isFinite(numeric)) {
+    return `$${value}`;
+  }
+
+  return new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: Math.abs(numeric) > 0 && Math.abs(numeric) < 0.01 ? 4 : 2,
+  }).format(numeric);
 }

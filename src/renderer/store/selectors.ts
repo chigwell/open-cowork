@@ -16,7 +16,7 @@
 
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from './index';
-import type { Session, Message, TraceStep, Settings, AppConfig } from '../types';
+import type { Session, Message, TraceStep, Settings, AppConfig, Llm7Balance } from '../types';
 import type { GlobalNotice, SessionExecutionClock } from './index';
 
 // ---------------------------------------------------------------------------
@@ -214,6 +214,21 @@ export function useAppConfig(): AppConfig | null {
 /** Returns whether the app has been configured with valid API credentials. */
 export function useIsConfigured(): boolean {
   return useAppStore((s) => s.isConfigured);
+}
+
+/** Returns the latest in-memory LLM7 account balance state. */
+export function useLlm7BalanceState(): {
+  balance: Llm7Balance | null;
+  loading: boolean;
+  error: string | null;
+} {
+  return useAppStore(
+    useShallow((s) => ({
+      balance: s.llm7Balance,
+      loading: s.llm7BalanceLoading,
+      error: s.llm7BalanceError,
+    }))
+  );
 }
 
 /**

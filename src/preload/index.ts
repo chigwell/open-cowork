@@ -18,6 +18,7 @@ import type {
   ScheduleUpdateInput,
   ProviderModelInfo,
   LocalOllamaDiscoveryResult,
+  Llm7Balance,
   MemoryOverview,
   MemorySearchResult,
   MemoryReadResult,
@@ -25,6 +26,8 @@ import type {
   MemoryDebugFileInfo,
   MemoryDebugFileContent,
   MemoryInspectSessionResult,
+  Llm7AuthStatus,
+  Llm7SignInResult,
 } from '../renderer/types';
 import type { DiagnosticInput, DiagnosticResult } from '../renderer/types';
 import type {
@@ -186,6 +189,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('config.diagnose', input),
     discoverLocal: (payload?: { baseUrl?: string }): Promise<LocalOllamaDiscoveryResult> =>
       ipcRenderer.invoke('config.discover-local', payload),
+  },
+
+  llm7Auth: {
+    getStatus: (): Promise<Llm7AuthStatus> => ipcRenderer.invoke('llm7Auth.getStatus'),
+    getBalance: (): Promise<Llm7Balance | null> => ipcRenderer.invoke('llm7Auth.getBalance'),
+    signInWithGoogleCredential: (payload: { credential: string }): Promise<Llm7SignInResult> =>
+      ipcRenderer.invoke('llm7Auth.signInWithGoogleCredential', payload),
+    logout: (): Promise<{ success: boolean; config: AppConfig; status: Llm7AuthStatus }> =>
+      ipcRenderer.invoke('llm7Auth.logout'),
   },
 
   // Window control methods
@@ -411,7 +423,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   memory: {
-    getOverview: (cwd?: string): Promise<MemoryOverview> => ipcRenderer.invoke('memory.getOverview', cwd),
+    getOverview: (cwd?: string): Promise<MemoryOverview> =>
+      ipcRenderer.invoke('memory.getOverview', cwd),
     search: (payload: {
       query: string;
       cwd?: string;
@@ -424,7 +437,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('memory.rebuildWorkspace', cwd),
     clearWorkspace: (cwd: string): Promise<{ success: boolean; workspaceKey: string }> =>
       ipcRenderer.invoke('memory.clearWorkspace', cwd),
-    clearCoreMemory: (): Promise<{ success: boolean }> => ipcRenderer.invoke('memory.clearCoreMemory'),
+    clearCoreMemory: (): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('memory.clearCoreMemory'),
     rebuildAll: (): Promise<{ success: boolean; workspaceCount: number; sessionCount: number }> =>
       ipcRenderer.invoke('memory.rebuildAll'),
     listFiles: (): Promise<MemoryDebugFileInfo[]> => ipcRenderer.invoke('memory.listFiles'),
@@ -480,6 +494,16 @@ declare global {
         }) => Promise<ProviderModelInfo[]>;
         diagnose: (input: DiagnosticInput) => Promise<DiagnosticResult>;
         discoverLocal: (payload?: { baseUrl?: string }) => Promise<LocalOllamaDiscoveryResult>;
+      };
+      llm7Auth: {
+        getStatus: () => Promise<Llm7AuthStatus>;
+        getBalance: () => Promise<Llm7Balance | null>;
+        signInWithGoogleCredential: (payload: { credential: string }) => Promise<Llm7SignInResult>;
+        logout: () => Promise<{
+          success: boolean;
+          config: AppConfig;
+          status: Llm7AuthStatus;
+        }>;
       };
       window: {
         minimize: () => void;
@@ -665,7 +689,11 @@ declare global {
         rebuildWorkspace: (cwd: string) => Promise<{ success: boolean; workspaceKey: string }>;
         clearWorkspace: (cwd: string) => Promise<{ success: boolean; workspaceKey: string }>;
         clearCoreMemory: () => Promise<{ success: boolean }>;
-        rebuildAll: () => Promise<{ success: boolean; workspaceCount: number; sessionCount: number }>;
+        rebuildAll: () => Promise<{
+          success: boolean;
+          workspaceCount: number;
+          sessionCount: number;
+        }>;
         listFiles: () => Promise<MemoryDebugFileInfo[]>;
         readFile: (filePath: string) => Promise<MemoryDebugFileContent>;
         inspectSession: (

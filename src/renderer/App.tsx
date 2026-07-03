@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useCallback } from 'react';
+import { Suspense, lazy, useEffect, useRef, useCallback, useState } from 'react';
 import { useAppStore } from './store';
 import {
   useActiveSessionId,
@@ -22,6 +22,7 @@ import { Titlebar } from './components/Titlebar';
 import { SandboxSetupDialog } from './components/SandboxSetupDialog';
 import { SandboxSyncToast } from './components/SandboxSyncToast';
 import { GlobalNoticeToast } from './components/GlobalNoticeToast';
+import { LLM7AuthModal } from './components/LLM7AuthModal';
 import { PanelErrorBoundary } from './components/PanelErrorBoundary';
 import type { AppConfig } from './types';
 import type { GlobalNoticeAction } from './store';
@@ -64,6 +65,7 @@ function App() {
   const { showSettings } = useSettingsState();
   const { sidebarCollapsed } = useLayoutState();
   const { showConfigModal, isConfigured, appConfig } = useConfigModalState();
+  const hasSeenInitialConfigStatus = useAppStore((s) => s.hasSeenInitialConfigStatus);
   const globalNotice = useGlobalNotice();
   const { progress: sandboxSetupProgress, isComplete: isSandboxSetupComplete } =
     useSandboxSetupState();
@@ -83,7 +85,9 @@ function App() {
   const { listSessions, isElectron } = useIPC();
   const { width } = useWindowSize();
   const initialized = useRef(false);
+  const checkedLlm7Status = useRef(false);
   const sidebarBeforeSettings = useRef(false);
+  const [showLlm7AuthModal, setShowLlm7AuthModal] = useState(false);
 
   useEffect(() => {
     // Only run once on mount
@@ -94,6 +98,23 @@ function App() {
       listSessions();
     }
   }, []); // Empty deps - run once
+
+  useEffect(() => {
+    if (!isElectron || !hasSeenInitialConfigStatus) {
+      return;
+    }
+
+    setShowLlm7AuthModal(!isConfigured);
+
+    if (checkedLlm7Status.current) {
+      return;
+    }
+    checkedLlm7Status.current = true;
+
+    void window.electronAPI.llm7Auth.getStatus().catch((error) => {
+      console.error('[App] Failed to check LLM7 auth status:', error);
+    });
+  }, [hasSeenInitialConfigStatus, isConfigured, isElectron]);
 
   // Apply theme to document root
   useEffect(() => {
@@ -146,6 +167,15 @@ function App() {
   const handleConfigClose = useCallback(() => {
     setShowConfigModal(false);
   }, [setShowConfigModal]);
+
+  const handleLlm7Authenticated = useCallback(
+    (result: { config: AppConfig }) => {
+      setIsConfigured(true);
+      setAppConfig(result.config);
+      setShowLlm7AuthModal(false);
+    },
+    [setAppConfig, setIsConfigured]
+  );
 
   // Handle sandbox setup complete
   const handleSandboxSetupComplete = useCallback(() => {
@@ -254,6 +284,8 @@ function App() {
         onDismiss={clearGlobalNotice}
         onAction={handleGlobalNoticeAction}
       />
+
+      <LLM7AuthModal isOpen={showLlm7AuthModal} onAuthenticated={handleLlm7Authenticated} />
     </div>
   );
 }
