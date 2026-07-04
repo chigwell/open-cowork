@@ -48,11 +48,26 @@ describe('session title utils', () => {
     ).toBe(false);
   });
 
-  it('builds a bilingual prompt requiring <=15 chars and same language', () => {
-    const prompt = buildTitlePrompt('帮我做一个PPT');
+  it('builds an English prompt without Chinese instructions by default', () => {
+    const prompt = buildTitlePrompt('Make me a deck');
+    expect(prompt).toContain('Return the title in English');
+    expect(prompt).not.toContain('请根据');
+    expect(prompt).not.toContain('Верни');
+  });
+
+  it('builds a Russian prompt when Russian is selected', () => {
+    const prompt = buildTitlePrompt('Покажи ошибки в проекте', 'ru');
+    expect(prompt).toContain('Верни название на русском языке');
+    expect(prompt).not.toContain('Return the title in English');
+    expect(prompt).not.toContain('请根据');
+  });
+
+  it('builds a Chinese prompt when Chinese is selected', () => {
+    const prompt = buildTitlePrompt('帮我做一个PPT', 'zh');
+    expect(prompt).toContain('使用中文返回标题');
     expect(prompt).toContain('15');
-    expect(prompt).toContain('同语言');
-    expect(prompt).toContain('same language');
+    expect(prompt).not.toContain('Return the title in English');
+    expect(prompt).not.toContain('Верни');
   });
 
   it('normalizes generated title by taking first line and stripping quotes', () => {

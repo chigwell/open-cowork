@@ -4,12 +4,14 @@ import {
   normalizeGeneratedTitle,
   shouldGenerateTitle,
 } from './session-title-utils';
+import type { SupportedLanguageCode } from '../../shared/app-language';
 
 type TitleFlowDeps = {
   sessionId: string;
   prompt: string;
   userMessageCount: number;
   currentTitle: string;
+  language?: SupportedLanguageCode | string;
   hasAttempted: boolean;
   generateTitle: (titlePrompt: string) => Promise<string | null>;
   updateTitle: (title: string) => Promise<boolean> | boolean;
@@ -46,7 +48,7 @@ export async function maybeGenerateSessionTitle(deps: TitleFlowDeps): Promise<vo
 
   deps.log('[SessionTitle] Generating title...', deps.sessionId);
 
-  const titlePrompt = buildTitlePrompt(deps.prompt);
+  const titlePrompt = buildTitlePrompt(deps.prompt, deps.language);
   let generatedTitle: string | null = null;
   try {
     generatedTitle = normalizeGeneratedTitle(await deps.generateTitle(titlePrompt));

@@ -198,6 +198,7 @@ interface AppState {
 
 const defaultSettings: Settings = {
   theme: 'light',
+  language: 'en',
   defaultTools: [
     'askuserquestion',
     'todowrite',

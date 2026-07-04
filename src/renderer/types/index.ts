@@ -570,6 +570,7 @@ export type ServerEvent =
 // Settings types
 export interface Settings {
   theme: AppTheme;
+  language: SupportedLanguageCode;
   apiKey?: string;
   defaultTools: string[];
   permissionRules: PermissionRule[];
@@ -607,6 +608,7 @@ export interface ExecutionContext {
 export type ProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini' | 'ollama';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
 export type AppTheme = 'dark' | 'light' | 'system';
+export type SupportedLanguageCode = 'en' | 'zh' | 'ru';
 export type ProviderProfileKey =
   | 'openrouter'
   | 'anthropic'
@@ -684,6 +686,7 @@ export interface AppConfig {
   defaultWorkdir?: string;
   globalSkillsPath?: string;
   theme?: AppTheme;
+  language?: SupportedLanguageCode;
   sandboxEnabled?: boolean;
   memoryEnabled?: boolean;
   memoryRuntime?: MemoryRuntimeConfig;

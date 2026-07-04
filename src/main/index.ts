@@ -2858,6 +2858,21 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
         });
       }
 
+      if (
+        event.payload.language === 'en' ||
+        event.payload.language === 'zh' ||
+        event.payload.language === 'ru'
+      ) {
+        configStore.update({ language: event.payload.language });
+        sendToRenderer({
+          type: 'config.status',
+          payload: {
+            isConfigured: configStore.isConfigured(),
+            config: configStore.getAll(),
+          },
+        });
+      }
+
       if (Array.isArray((event.payload as { permissionRules?: unknown }).permissionRules)) {
         setPermissionRules(
           (event.payload as { permissionRules: PermissionRule[] }).permissionRules

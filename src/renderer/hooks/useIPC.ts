@@ -11,6 +11,7 @@ import type {
   ContentBlock,
 } from '../types';
 import i18n from '../i18n/config';
+import { getSupportedLanguageCode } from '../i18n/languages';
 
 // Check if running in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -157,7 +158,13 @@ export function useIPC() {
       const isInitialConfigStatus = !store.hasSeenInitialConfigStatus;
       store.setIsConfigured(isConfigured);
       store.setAppConfig(config);
-      store.setSettings({ theme: config.theme || 'light' });
+      const storedLanguage =
+        typeof window !== 'undefined' ? window.localStorage?.getItem('i18nextLng') : null;
+      const language = getSupportedLanguageCode(storedLanguage || config.language || i18n.language);
+      store.setSettings({ theme: config.theme || 'light', language });
+      if (i18n.language !== language) {
+        void i18n.changeLanguage(language);
+      }
       void refreshLlm7Balance();
       if (isInitialConfigStatus) {
         store.markInitialConfigStatusSeen();
@@ -391,10 +398,10 @@ export function useIPC() {
           const latest = useAppStore.getState();
           window.electronAPI.send({
             type: 'settings.update',
-            payload: { permissionRules: latest.settings.permissionRules } as Record<
-              string,
-              unknown
-            >,
+            payload: {
+              permissionRules: latest.settings.permissionRules,
+              language: latest.settings.language,
+            } as Record<string, unknown>,
           });
         } catch (syncErr) {
           console.warn('[useIPC] Failed to sync permissionRules to main:', syncErr);

@@ -30,6 +30,7 @@ import {
   shouldUseAnthropicAuthToken,
 } from './auth-utils';
 import { API_PROVIDER_PRESETS, PI_AI_CURATED_PRESETS } from '../../shared/api-model-presets';
+import { getSupportedLanguageCode, type SupportedLanguageCode } from '../../shared/app-language';
 
 /**
  * Application configuration schema
@@ -112,6 +113,9 @@ export interface AppConfig {
   // UI theme preference
   theme: AppTheme;
 
+  // UI language preference
+  language?: SupportedLanguageCode;
+
   // Sandbox mode (WSL/Lima isolation)
   sandboxEnabled: boolean;
 
@@ -172,6 +176,7 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
   'globalSkillsPath',
   'enableDevLogs',
   'theme',
+  'language',
   'sandboxEnabled',
   'memoryEnabled',
   'enableThinking',
@@ -251,6 +256,7 @@ const defaultConfig: AppConfig = {
   globalSkillsPath: '',
   enableDevLogs: false,
   theme: 'light',
+  language: 'en',
   sandboxEnabled: false,
   memoryEnabled: true,
   memoryRuntime: {
@@ -985,6 +991,10 @@ export class ConfigStore {
           : defaultConfig.globalSkillsPath,
       enableDevLogs: toBoolean(raw.enableDevLogs, defaultConfig.enableDevLogs),
       theme: isAppTheme(raw.theme) ? raw.theme : defaultConfig.theme,
+      language:
+        typeof raw.language === 'string'
+          ? getSupportedLanguageCode(raw.language)
+          : defaultConfig.language,
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
       memoryEnabled: toBoolean(raw.memoryEnabled, defaultConfig.memoryEnabled),
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
@@ -1126,6 +1136,11 @@ export class ConfigStore {
         }
         if (key === 'theme' && !isAppTheme(rawValue)) {
           return defaultConfig[key];
+        }
+        if (key === 'language') {
+          return typeof rawValue === 'string'
+            ? (getSupportedLanguageCode(rawValue) as AppConfig[K])
+            : defaultConfig[key];
         }
         if (
           (key === 'enableDevLogs' ||
@@ -1402,6 +1417,10 @@ export class ConfigStore {
       enableDevLogs:
         updates.enableDevLogs !== undefined ? updates.enableDevLogs : current.enableDevLogs,
       theme: updates.theme !== undefined ? updates.theme : current.theme,
+      language:
+        updates.language !== undefined
+          ? getSupportedLanguageCode(updates.language)
+          : current.language,
       sandboxEnabled:
         updates.sandboxEnabled !== undefined ? updates.sandboxEnabled : current.sandboxEnabled,
       memoryEnabled:

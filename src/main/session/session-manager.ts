@@ -430,7 +430,7 @@ export class SessionManager {
     }
 
     const generated = await this.withTimeout(
-      this.generateTitleWithConfig(buildTitlePrompt(normalizedPrompt)),
+      this.generateTitleWithConfig(buildTitlePrompt(normalizedPrompt, configStore.get('language'))),
       TITLE_GENERATION_TIMEOUT_MS,
       'session-title-preview'
     );
@@ -768,6 +768,7 @@ export class SessionManager {
         prompt,
         userMessageCount,
         currentTitle: session.title,
+        language: configStore.get('language'),
         hasAttempted: this.sessionTitleAttempts.has(session.id),
         generateTitle: async (titlePrompt) => {
           if (shouldAbort()) {

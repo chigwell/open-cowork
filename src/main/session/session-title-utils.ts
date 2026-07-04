@@ -1,4 +1,5 @@
 export { DEFAULT_SESSION_TITLE, getDefaultTitleFromPrompt } from '../../shared/session-title';
+import { getSupportedLanguageCode, type SupportedLanguageCode } from '../../shared/app-language';
 import { DEFAULT_SESSION_TITLE, getDefaultTitleFromPrompt } from '../../shared/session-title';
 
 export type TitleDecisionInput = {
@@ -33,18 +34,41 @@ export function normalizeGeneratedTitle(value: string | null | undefined): strin
   return normalized.slice(0, 120);
 }
 
-export function buildTitlePrompt(prompt: string): string {
+export function buildTitlePrompt(
+  prompt: string,
+  language?: SupportedLanguageCode | string
+): string {
+  const normalizedLanguage = getSupportedLanguageCode(language);
+  const trimmedPrompt = prompt.trim();
+
+  if (normalizedLanguage === 'ru') {
+    return [
+      'Сгенерируй короткое название для следующего запроса пользователя. Правила:',
+      '- Максимум 6 слов',
+      '- Верни название на русском языке',
+      '- Без кавычек, нумерации и пунктуации в конце',
+      '',
+      `Запрос пользователя: ${trimmedPrompt}`,
+    ].join('\n');
+  }
+
+  if (normalizedLanguage === 'zh') {
+    return [
+      '请根据以下用户请求生成一个简短的对话标题。规则：',
+      '- 不超过15个字',
+      '- 使用中文返回标题',
+      '- 不要加引号、编号或结尾标点',
+      '',
+      `用户请求：${trimmedPrompt}`,
+    ].join('\n');
+  }
+
   return [
     'Generate a short title for the following user request. Rules:',
-    '- Max 15 characters (Chinese) or 6 words (English)',
-    '- Reply in the same language as the user request',
+    '- Max 6 words',
+    '- Return the title in English',
     '- No quotes, numbering, or punctuation at the end',
     '',
-    '请根据用户请求生成一个简短的对话标题：',
-    '- 不超过15个字',
-    '- 同语言输出',
-    '- 不要加引号或编号',
-    '',
-    `User request / 用户请求：${prompt.trim()}`,
+    `User request: ${trimmedPrompt}`,
   ].join('\n');
 }

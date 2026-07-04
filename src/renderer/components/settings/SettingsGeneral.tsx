@@ -9,6 +9,10 @@ export function SettingsGeneral() {
   const updateSettings = useAppStore((s) => s.updateSettings);
   const currentLang = getSupportedLanguageCode(i18n.language);
   const [appVer, setAppVer] = useState('');
+  const handleLanguageChange = (language: typeof currentLang) => {
+    void i18n.changeLanguage(language);
+    updateSettings({ language });
+  };
   useEffect(() => {
     try {
       const v = window.electronAPI?.getVersion?.();
@@ -54,7 +58,7 @@ export function SettingsGeneral() {
           {supportedLanguages.map((lang) => (
             <button
               key={lang.code}
-              onClick={() => i18n.changeLanguage(lang.code)}
+              onClick={() => handleLanguageChange(lang.code)}
               className={`flex-1 px-4 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
                 currentLang === lang.code
                   ? 'border-accent bg-accent/5 text-text-primary'
